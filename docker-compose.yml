@@ -1,0 +1,54 @@
+x-app: &app
+  build: .
+  image: edf-tempo:latest
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATA_DIR: /app/data
+    PREFECT_HOME: /app/data/.prefect
+  volumes:
+    - ./data:/app/data
+  restart: unless-stopped
+
+services:
+  # 1. First full run: ingest the whole history, train, predict (exits when done)
+  init:
+    <<: *app
+    container_name: edf-tempo-init
+    command: python -m src.pipeline run
+    restart: "no"
+
+  # 2. Daily refresh at SCHEDULE_TIMES (default 07:00, 11:30, 18:00 Paris time)
+  scheduler:
+    <<: *app
+    container_name: edf-tempo-scheduler
+    command: python -m src.pipeline schedule
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  api:
+    <<: *app
+    container_name: edf-tempo-api
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  dashboard:
+    <<: *app
+    container_name: edf-tempo-dashboard
+    command: streamlit run dashboard/app.py --server.address=0.0.0.0 --server.port=8501 --server.headless=true
+    ports:
+      - "8501:8501"
+    depends_on:
+      init:
+        condition: service_completed_successfully

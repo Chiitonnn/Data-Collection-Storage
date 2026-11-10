@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest==9.0.2
+httpx==0.28.1
+ruff==0.14.10
+jupyterlab
+matplotlib
+# PostgreSQL instead of SQLite: pip install psycopg[binary] and set DATABASE_URL
